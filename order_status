@@ -1,0 +1,43 @@
+CREATE OR REPLACE FUNCTION orders_status_summary(
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL,
+    p_seller_ids INTEGER[] DEFAULT NULL,
+    p_category_ids INTEGER[] DEFAULT NULL
+)
+RETURNS TABLE (
+    status VARCHAR,
+    total_orders BIGINT,
+    total_revenue NUMERIC(15,2)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.status,
+        COUNT(DISTINCT o.order_id) AS total_orders,
+        COALESCE(SUM(o.total_amount), 0) AS total_revenue
+    FROM orders o
+    WHERE 
+        -- Date range filter
+        (p_start_date IS NULL OR o.order_date >= p_start_date)
+        AND (p_end_date IS NULL OR o.order_date <= p_end_date)
+        -- Seller list filter
+        AND (p_seller_ids IS NULL OR o.seller_id = ANY(p_seller_ids))
+        -- Category list filter
+        AND (
+            p_category_ids IS NULL 
+            OR EXISTS (
+                SELECT 1 
+                FROM order_items oi
+                INNER JOIN products p ON oi.product_id = p.product_id
+                WHERE oi.order_id = o.order_id
+                    AND p.category_id = ANY(p_category_ids)
+            )
+        )
+    GROUP BY o.status
+    ORDER BY total_orders DESC;
+END;
+$$;
+
+select * from orders_status_summary()

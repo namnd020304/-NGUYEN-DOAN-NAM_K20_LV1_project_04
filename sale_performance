@@ -1,0 +1,62 @@
+CREATE OR REPLACE FUNCTION seller_performance_report(
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL,
+    p_category_id INTEGER DEFAULT NULL,
+    p_brand_id INTEGER DEFAULT NULL,
+    p_min_revenue NUMERIC DEFAULT NULL
+)
+RETURNS TABLE (
+    seller_id INTEGER,
+    seller_name VARCHAR,
+    seller_type VARCHAR,
+    seller_country VARCHAR,
+    seller_rating NUMERIC,
+    total_orders BIGINT,
+    total_quantity BIGINT,
+    total_revenue NUMERIC(15,2),
+    avg_order_value NUMERIC(15,2),
+    unique_products BIGINT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.seller_id,
+        s.seller_name,
+        s.seller_type,
+        s.country AS seller_country,
+        s.rating AS seller_rating,
+        COUNT(DISTINCT o.order_id) AS total_orders,
+        COALESCE(SUM(oi.quantity), 0) AS total_quantity,
+        COALESCE(SUM(oi.subtotal), 0) AS total_revenue,
+        ROUND(COALESCE(AVG(o.total_amount), 0), 2) AS avg_order_value,
+        COUNT(DISTINCT oi.product_id) AS unique_products
+    FROM sellers s
+    INNER JOIN orders o ON s.seller_id = o.seller_id
+    INNER JOIN order_items oi ON o.order_id = oi.order_id
+    INNER JOIN products p ON oi.product_id = p.product_id
+    WHERE 
+        -- Date range filter
+        (p_start_date IS NULL OR o.order_date >= p_start_date)
+        AND (p_end_date IS NULL OR o.order_date <= p_end_date)
+        -- Category filter
+        AND (p_category_id IS NULL OR p.category_id = p_category_id)
+        -- Brand filter
+        AND (p_brand_id IS NULL OR p.brand_id = p_brand_id)
+        -- Only active products
+        AND p.is_active = TRUE
+    GROUP BY 
+        s.seller_id, 
+        s.seller_name, 
+        s.seller_type, 
+        s.country, 
+        s.rating
+    HAVING 
+        -- Optional minimum revenue filter
+        (p_min_revenue IS NULL OR SUM(oi.subtotal) >= p_min_revenue)
+    ORDER BY total_revenue DESC;
+END;
+$$;
+
+select * from seller_performance_report()

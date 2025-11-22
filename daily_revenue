@@ -1,0 +1,40 @@
+CREATE OR REPLACE FUNCTION daily_revenue_report(
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL,
+    p_product_ids INTEGER[] DEFAULT NULL,
+    p_seller_id INTEGER DEFAULT NULL,
+    p_brand_id INTEGER DEFAULT NULL,
+    p_category_id INTEGER DEFAULT NULL
+)
+RETURNS TABLE (
+    date DATE,
+    total_orders BIGINT,
+    total_quantity BIGINT,
+    total_revenue NUMERIC(15,2)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        o.order_date::DATE AS date,
+        COUNT(DISTINCT o.order_id) AS total_orders,
+        COALESCE(SUM(oi.quantity), 0) AS total_quantity,
+        COALESCE(SUM(oi.subtotal), 0) AS total_revenue
+    FROM orders o
+    INNER JOIN order_items oi ON o.order_id = oi.order_id
+    INNER JOIN products p ON oi.product_id = p.product_id
+    WHERE 
+        (p_start_date IS NULL OR o.order_date >= p_start_date)
+        AND (p_end_date IS NULL OR o.order_date <= p_end_date)
+        AND (p_product_ids IS NULL OR oi.product_id = ANY(p_product_ids))
+        AND (p_seller_id IS NULL OR o.seller_id = p_seller_id)
+        AND (p_brand_id IS NULL OR p.brand_id = p_brand_id)
+        AND (p_category_id IS NULL OR p.category_id = p_category_id)
+        AND p.is_active = TRUE
+    GROUP BY o.order_date::DATE
+    ORDER BY date DESC;
+END;
+$$;
+
+SELECT * FROM daily_revenue_report();

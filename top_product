@@ -1,0 +1,64 @@
+CREATE OR REPLACE FUNCTION top_products_per_brand(
+    p_start_date DATE DEFAULT NULL,
+    p_end_date DATE DEFAULT NULL,
+    p_seller_ids INTEGER[] DEFAULT NULL,
+    p_top_n INTEGER DEFAULT 5
+)
+RETURNS TABLE (
+    brand_id INTEGER,
+    brand_name VARCHAR,
+    product_id INTEGER,
+    product_name VARCHAR,
+    total_quantity BIGINT,
+    total_revenue NUMERIC(15,2)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    WITH product_sales AS (
+        SELECT 
+            b.brand_id,
+            b.brand_name,
+            p.product_id,
+            p.product_name,
+            SUM(oi.quantity) AS total_quantity,
+            SUM(oi.subtotal) AS total_revenue,
+            ROW_NUMBER() OVER (
+                PARTITION BY b.brand_id 
+                ORDER BY SUM(oi.quantity) DESC
+            ) AS rank_by_quantity
+        FROM brands b
+        INNER JOIN products p ON b.brand_id = p.brand_id
+        INNER JOIN order_items oi ON p.product_id = oi.product_id
+        INNER JOIN orders o ON oi.order_id = o.order_id
+        WHERE 
+            -- Date range filter
+            (p_start_date IS NULL OR o.order_date >= p_start_date)
+            AND (p_end_date IS NULL OR o.order_date <= p_end_date)
+            -- Seller list filter
+            AND (p_seller_ids IS NULL OR o.seller_id = ANY(p_seller_ids))
+            -- Only active products
+            AND p.is_active = TRUE
+        GROUP BY 
+            b.brand_id,
+            b.brand_name,
+            p.product_id,
+            p.product_name
+    )
+    SELECT 
+        ps.brand_id,
+        ps.brand_name,
+        ps.product_id,
+        ps.product_name,
+        ps.total_quantity,
+        ps.total_revenue
+    FROM product_sales ps
+    WHERE ps.rank_by_quantity <= p_top_n
+    ORDER BY 
+        ps.brand_id,
+        ps.rank_by_quantity;
+END;
+$$;
+
+select * from top_products_per_brand()
