@@ -1,0 +1,39 @@
+CREATE TABLE orders_new (
+	order_id SERIAL,
+	order_date TIMESTAMP NOT NULL,
+	seller_id INT,
+	status VARCHAR(20),
+	total_amount DECIMAL(12,2),
+	created_at TIMESTAMP,
+	PRIMARY KEY(order_id, order_date),
+	FOREIGN KEY(seller_id) REFERENCES sellers(seller_id)
+)
+PARTITION BY RANGE (order_date);
+
+CREATE TABLE orders_m10 PARTITION OF orders_new
+    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
+CREATE TABLE orders_m11 PARTITION OF orders_new
+    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+
+CREATE TABLE order_items_new (
+	order_item_id BIGSERIAL,
+	order_id INT NOT NULL,
+	product_id INT,
+	order_date TIMESTAMP,
+	quantity INT,
+	unit_price NUMERIC(10,2),
+	subtotal NUMERIC(12,2),
+	created_at TIMESTAMP,
+	PRIMARY KEY (order_item_id, order_date),
+	FOREIGN KEY (product_id) REFERENCES products(product_id)
+)
+PARTITION BY RANGE (order_date);
+
+CREATE TABLE order_items_m10 PARTITION OF order_items_new
+    FOR VALUES FROM ('2025-10-01') TO ('2025-11-01');
+CREATE TABLE order_items_m11 PARTITION OF order_items_new
+    FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
+
+CREATE INDEX product_index
+ON order_items_new(product_id);
