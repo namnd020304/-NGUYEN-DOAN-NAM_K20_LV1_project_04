@@ -1,0 +1,77 @@
+DO $$
+DECLARE
+    v_order_id INT;
+    v_num_items INT;
+    v_counter INT;
+    v_selected_product_id INT;
+    v_selected_seller_id INT;
+    v_product_price NUMERIC(12,2);
+    v_quantity INT;
+    v_order_date TIMESTAMP;
+    t_goal INT := 100000; 
+    t_count INT := 0;
+BEGIN
+    WHILE t_count < t_goal LOOP
+        SELECT seller_id 
+        INTO v_selected_seller_id
+        FROM sellers 
+        ORDER BY RANDOM() 
+        LIMIT 1;
+        INSERT INTO orders (order_date, seller_id, status, total_amount, created_at)
+        VALUES (
+            NOW() - (FLOOR(RANDOM() * 30)::INT || ' days')::INTERVAL,
+            v_selected_seller_id,
+            (ARRAY['PLACED', 'PAID', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED'])[FLOOR(1 + RANDOM() * 6)::INT],
+            0,
+            NOW()
+        )
+        RETURNING order_id, order_date INTO v_order_id, v_order_date;
+        
+        v_num_items := FLOOR(3 + RANDOM() * 2)::INT;
+        v_counter := 0; 
+        
+        WHILE v_counter < v_num_items LOOP
+            SELECT product_id 
+            INTO v_selected_product_id
+            FROM products 
+            ORDER BY RANDOM() 
+            LIMIT 1;
+            
+            SELECT COALESCE(discount_price, price) 
+            INTO v_product_price
+            FROM products 
+            WHERE product_id = v_selected_product_id;
+            
+            v_quantity := FLOOR(1 + RANDOM() * 5)::INT;
+            
+            INSERT INTO order_items (order_id, product_id, order_date, quantity, unit_price, subtotal, created_at)
+            VALUES (
+                v_order_id,
+                v_selected_product_id,
+                v_order_date,
+                v_quantity,
+                v_product_price,
+                v_quantity * v_product_price,
+                NOW()
+            );
+            
+            v_counter := v_counter + 1;
+        END LOOP;
+        
+        UPDATE orders
+        SET total_amount = (
+            SELECT SUM(subtotal) 
+            FROM order_items 
+            WHERE order_id = v_order_id
+        )
+        WHERE order_id = v_order_id;
+        
+        t_count := t_count + 1;
+        
+        IF t_count % 10 = 0 THEN
+            RAISE NOTICE 'Created % orders', t_count;
+        END IF;
+    END LOOP;
+    
+    RAISE NOTICE 'Completed! Total orders created: %', t_count;
+END $$;
